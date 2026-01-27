@@ -170,5 +170,5 @@ All visualizations are interactive and dynamically updated based on user selecti
 
 ## License
 
-This project is made available for research and academic use under the policies and guidelines of the **National Institutes of Health (NIH)**.
+This project is made available for research and academic use under the policies and guidelines of the **Korea National Institutes of Health (KNIH)**.
 
