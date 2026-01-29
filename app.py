@@ -9,7 +9,7 @@ from types import SimpleNamespace
 repo_path="./assets"
 dog="dog"
 grouper="cohort"
-title="Analysis of Quantitized Data of Brain MR Images"
+title="Neuro Stream"
 
 st.set_page_config(
     page_title=title,
