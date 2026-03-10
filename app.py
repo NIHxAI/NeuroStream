@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 repo_path="./assets"
 grouper="cohort"
-title="Neuro Stream"
+title="NeuroStream"
 
 st.set_page_config(
     page_title=title,
