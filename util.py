@@ -19,6 +19,7 @@ from scipy.stats import (
 )
 from pingouin import ptests
 from sklearn.decomposition import IncrementalPCA as PCA
+import statsmodels.api as sm
 
 palette=sns.color_palette('Set1')
 
@@ -67,7 +68,9 @@ def lap(func,**kwargs):
 
 
 def sanitise(q:str)->str:
-    if (q!='sex' and len(q)<3):
+    if q is None: 
+        return ""
+    if q != 'sex' and len(q) < 3:
         return q.upper()
 
     elif (q=='mmse'):
@@ -227,26 +230,32 @@ def sign(x):
 
 
 def intergroupTt(
-    noe:pd.DataFrame,
-    c:tuple,
-    y:tuple,
+    noe: pd.DataFrame,
+    c: tuple, # (column_name, display_name, emoji)
+    y: tuple,
     star=True
-)->tuple[str,pd.DataFrame]:
+) -> tuple[str, pd.DataFrame]:
 
-    x=pd.pivot(
-        noe.loc[:,[c[0],y[0]]],
+    x = pd.pivot(
+        noe.loc[:, [c[0], y[0]]],
         columns=c[0],
         values=y[0]
     )
-    x.columns.name='Group'
+    x.columns.name = 'Group'
     
-    intergroupTtestResult=ptests(x,stars=star).map(lambda q:'NS' if not q else q)
-    intergroupTtestResult.columns=[code[c[0]][q] for q in intergroupTtestResult.columns]
-    intergroupTtestResult.index=[code[c[0]][q] for q in intergroupTtestResult.index]
-    intergroupTtestResultTitle=f'##### Groupwise T-test: {y[1]}<sup>{y[2]}</sup> by {c[1]}<br><sub>* p<0.05, ** <0.01, *** <0.001, or Not Significant</sub>'
+    intergroupTtestResult = ptests(x, stars=star).map(lambda q: 'NS' if not q else q)
     
-    return intergroupTtestResultTitle,intergroupTtestResult
-
+    mapping = code.get(c[0], {})
+    
+    intergroupTtestResult.columns = [mapping.get(q, q) for q in intergroupTtestResult.columns]
+    intergroupTtestResult.index = [mapping.get(q, q) for q in intergroupTtestResult.index]
+    
+    intergroupTtestResultTitle = (
+        f"##### ⚖️ Groupwise T-test: {y[1]}<sup>{y[2]}</sup> by {c[1]}<br>"
+        f"<sub>* p<0.05, ** <0.01, *** <0.001, or Not Significant</sub>"
+    )
+    
+    return intergroupTtestResultTitle, intergroupTtestResult
 
 def scatterTrajectory(
     noe,
@@ -259,13 +268,12 @@ def scatterTrajectory(
     if x[0]==y[0]:
         raise Exception(f"You're attempting to assign same variable '{x[0]}' to both axes.")
     
-    # Todo for to cope with go type inference
     _noe=pd.concat([
         noe.loc[:,c[0]].astype('object'),
         noe.loc[:,[y[0],x[0]]]
     ],axis=1).sort_values(c[0],ascending=False)
     
-    title=f'##### Scatterplot: {x[1]}<sup>{x[2]}</sup> and {y[1]}<sup>{y[2]}</sup> by {c[1]}'
+    title=f'##### 📉 Scatterplot: {x[1]}<sup>{x[2]}</sup> and {y[1]}<sup>{y[2]}</sup> by {c[1]}'
     
     graph=plotly.express.scatter(
         _noe,
@@ -278,7 +286,6 @@ def scatterTrajectory(
     
     categoricalObsCount=tagClassObsCount(noe, c[0])
     
-    # Todo for to cope with go type inference
     graph.for_each_trace(
         lambda q:q.update(name=categoricalObsCount[int(q.name) if q.name.isnumeric() else q.name])
     )
@@ -312,8 +319,8 @@ def decompose(
     
     noe=noe.dropna()
     
-    cats=noe.loc[:,c[0]] # Indexer
-    cat=np.sort(cats.unique()) # Categorical
+    cats=noe.loc[:,c[0]]
+    cat=np.sort(cats.unique())
     
     tag=list(
         zip(cat,range(len(cat)),palette[:cat.size])
@@ -467,3 +474,74 @@ def _getEsci(
 
 def isVs(x:pd.Series)->bool:
     return len(x.sample(frac=.1).unique())==2
+
+def get_site_effect_evaluation(noe, vol_cols, grouper):
+
+    p_values = []
+    f_stats = []
+    
+    site_dummies = pd.get_dummies(noe[grouper], drop_first=True).astype(float)
+    X = sm.add_constant(site_dummies)
+    
+    for col in vol_cols:
+        model = sm.OLS(noe[col], X).fit()
+        p_values.append(model.f_pvalue)
+        f_stats.append(model.fvalue)
+    
+    avg_p = np.mean(p_values)
+    sig_count = sum(1 for p in p_values if p < 0.05)
+    
+    return {
+        "avg_p": avg_p,
+        "sig_count": sig_count,
+        "f_stat": np.mean(f_stats)
+    }
+
+
+
+def draw_residual_comparison(noe_raw, noe_processed, var, batch_col, covariates):
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=False)
+    
+    selected_cohorts = noe_processed[batch_col].unique()
+    noe_raw_filtered = noe_raw[noe_raw[batch_col].isin(selected_cohorts)].copy()
+    
+    datasets = [("Pre-Combat Residuals", noe_raw_filtered), ("Post-Combat Residuals", noe_processed)]
+    
+    for i, (title, df) in enumerate(datasets):
+        X = pd.get_dummies(df[covariates], drop_first=True).astype(float)
+        X = sm.add_constant(X)
+        model = sm.OLS(df[var], X).fit()
+        df_plot = df.copy()
+        df_plot['res'] = model.resid
+
+        sns.boxplot(
+            data=df_plot, 
+            x=batch_col, 
+            y='res', 
+            hue=batch_col,
+            ax=axes[i], 
+            palette='Set2', 
+            showfliers=False, 
+            order=selected_cohorts,
+            legend=False
+        )
+        
+        sns.stripplot(
+            data=df_plot, 
+            x=batch_col, 
+            y='res', 
+            ax=axes[i], 
+            color=".3", 
+            size=3, 
+            alpha=0.4, 
+            order=selected_cohorts
+        )
+        
+        axes[i].axhline(0, color='red', linestyle='--', linewidth=1.2)
+        axes[i].set_title(title, fontsize=12)
+        axes[i].set_ylabel("Residual Value" if i==0 else "")
+        sns.despine(ax=axes[i])
+
+    plt.suptitle(f"Residual Analysis for {var} (Adjusted for: {', '.join(covariates)})", fontsize=14, y=1.05)
+    plt.tight_layout()
+    return fig
