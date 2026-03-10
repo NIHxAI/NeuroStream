@@ -118,8 +118,8 @@ Input CSV files must contain the following information.
 
 ```csv
 subject_id,cohort,age,sex,Left-Hippocampus,Right-Hippocampus
-001,BICWALZS,72,M,3120.5,2987.3
-002,KoGES,68,F,3255.2,3101.8
+001,Cohort1,72,M,3120.5,2987.3
+002,Cohort2,68,F,3255.2,3101.8
 ```
 
 ---
