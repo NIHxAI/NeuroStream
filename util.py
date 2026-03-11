@@ -8,15 +8,11 @@ from matplotlib import ticker
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-import plotly.io
 import plotly.graph_objects as go
 import plotly.express
 
-from scipy.stats import (
-    t,
-    ttest_ind,
-    f_oneway
-)
+from scipy.stats import ttest_ind
+
 from pingouin import ptests
 from sklearn.decomposition import IncrementalPCA as PCA
 import statsmodels.api as sm
@@ -49,23 +45,16 @@ plot_style_constraint=dict(
 
 plt.rcParams['font.family']='Serif'
 
-
-def get_datetime_str()->str:
-    return 
-
-
 def claim(title:str)->None:
     dt=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     print(dt, ':' ,title)
-    return 
-
+    return
 
 def lap(func,**kwargs):
     t0=time()
     result=func(**kwargs)
     claim(f'{func.__repr__()} took {time()-t0:.1f} s')
     return result
-
 
 def sanitise(q:str)->str:
     if q is None: 
@@ -95,26 +84,34 @@ def sanitise(q:str)->str:
 
     return 'column-name-parsing-failure'
 
+def tagClassObsCount(noe: pd.DataFrame, cat: str) -> dict:
+    obs_count = noe[cat].value_counts().to_dict()
+    
+    clean_cat_key = cat.replace('cov_', '').replace(' ', '').replace('_', '').lower()
+    
+    normalized_keys = {k.replace('_', '').lower(): k for k in code.keys()}
+    target_key = normalized_keys.get(clean_cat_key)
+    
+    obs_count_tag_view = {}
+    for val, count in obs_count.items():
+        lookup_val = val
+        try:
+            num = float(val)
+            if num.is_integer():
+                lookup_val = int(num)
+        except (ValueError, TypeError):
+            pass
 
-def tagClassObsCount(
-    noe:pd.DataFrame,
-    cat:str
-)->dict:
-
-    obs_castable=np.can_cast(noe.loc[:,cat].values,'f8')
-    obs_count=noe.loc[:,cat].value_counts().to_dict()
-    
-    if obs_castable:
-        obs_count_tag_view={q:f'{code[cat][q]}<br>n={w}' for q,w in obs_count.items()}
-    else:
-        obs_count_tag_view=noe.loc[:,cat].value_counts().to_dict()
-        for obs_view in obs_count_tag_view:
-            obs_count_tag_view[obs_view]=f'{obs_view}<br>n={obs_count_tag_view[obs_view]}'
-    
-    claim(f'{obs_count_tag_view=}')
-    
+        label = None
+        if target_key and lookup_val in code[target_key]:
+            label = code[target_key][lookup_val]
+        
+        if label is None:
+            label = str(lookup_val)
+            
+        obs_count_tag_view[val] = f'{label}<br>n={count}'
+        
     return obs_count_tag_view
-
 
 def getNoeImage(
     noeImage:dict,
@@ -127,100 +124,54 @@ def getNoeImage(
     else:
         return None
 
-
-def projectNoeImage(graph,image)->go.Figure:
-
-    graph.add_layout_image(dict(
-        source=image,
-        xref='paper',
-        yref='paper',
-        x=0.85,
-        y=0.25,
-        sizex=.10,
-        sizey=.10,
-        opacity=.7
-    ))
-
-    return graph
-
-
 def multiBox(
-    noe:pd.DataFrame,
-    c:tuple,
-    y:tuple,
-    vs:bool
-)->tuple[str, go.Figure]:
-    noe=noe.sort_values(c[0],ascending=False)
-    _title=f'{y[1]}<sup>{y[2]}</sup> by {c[1]}'
+    noe: pd.DataFrame,
+    c: tuple,
+    y: tuple,
+    vs: bool
+) -> tuple[str, go.Figure]:
+    
+    noe = noe[[c[0], y[0]]].copy().sort_index()
+    
+    _title = f'{y[1]}<sup>{y[2]}</sup> by {c[1]}'
 
     def _titling():
-        tStat=_tt(noe,c[0],y[0])
-        tStatStr=f't={tStat[0]:.2f}, p={tStat[1]:.2f}'
-        
-        es=_getEs(noe,c[0],y[0])
-        esSize=noe.groupby(c[0])[y[0]].count()
-        esCi=_getEsci(
-            noe,
-            na=esSize.iat[0],
-            nb=esSize.iat[1],
-            d=es,
-            ci=.99
-        )
-        esStr=f'es={es:.2f} [{esCi[0]:.2f}, {esCi[1]:.2f}]'
-        
-        return (_title,tStatStr,esStr)
+        try:
+            unique_groups = noe[c[0]].unique()
+            if len(unique_groups) == 2:
+                tStat = _tt(noe, c[0], y[0])
+                tStatStr = f't={tStat[0]:.2f}, p={tStat[1]:.2f}'
+                es = _getEs(noe, c[0], y[0])
+                return (_title, tStatStr, f'es={es:.2f}')
+            return (_title, "ANOVA required", "")
+        except:
+            return (_title, "", "")
+
+    categoricalObsCount = tagClassObsCount(noe, c[0])
     
-    cats=set(q for q in noe.loc[:,c[0]].values)
-    noe=noe.loc[:,[c[0],y[0]]]
-    title=_titling() if vs else _title
-    categoricalObsCount=tagClassObsCount(noe, c[0])
+    cats = sorted(noe[c[0]].unique())
     
-    graph=go.Figure()
+    title = _titling() if vs else _title
+    graph = go.Figure()
     
     for cat in cats:
+        group_data = noe.loc[noe[c[0]] == cat, y[0]]
+        
         graph.add_trace(
             go.Box(
-                y=noe.loc[noe[c[0]]==cat,y[0]],
-                name=f'{categoricalObsCount[cat]}',
+                y=group_data,
+                name=categoricalObsCount.get(cat, str(cat)),
             )
         )
     
     graph.update_layout(
-        legend_orientation='v',
         legend_title=f'{c[1]}',
-        xaxis={
-            'title':f'{c[1]}',
-            **plot_style_constraint
-        },
-        yaxis={
-            'title':f'{y[1]}',
-            **plot_style_constraint
-        },
-        margin={
-            't':0,
-            'b':0
-        }
+        xaxis={'title': f'{c[1]}', **plot_style_constraint},
+        yaxis={'title': f'{y[1]}', **plot_style_constraint},
+        margin={'t': 50, 'b': 20}
     )
     
-    return title,graph
-
-
-def _f(
-    noe:pd.DataFrame,
-    c:tuple,
-    y:tuple
-)->tuple:
-
-    x=noe.loc[:,[c[0],y[0]]]
-    cats=x.loc[:,c[0]].unique()
-    
-    fTestResult=tuple(q for q in f_oneway(
-        *[x.loc[x[c[0]]==q,y[0]] for q in cats],
-        nan_policy='omit'
-    ))
-
-    return fTestResult
-
+    return title, graph
 
 def sign(x):
     if len(x)>0 and x[0]=='*':
@@ -231,7 +182,7 @@ def sign(x):
 
 def intergroupTt(
     noe: pd.DataFrame,
-    c: tuple, # (column_name, display_name, emoji)
+    c: tuple,
     y: tuple,
     star=True
 ) -> tuple[str, pd.DataFrame]:
@@ -309,7 +260,6 @@ def scatterTrajectory(
     
     return title,graph
 
-
 def decompose(
     noe:pd.DataFrame,
     c:str,
@@ -371,11 +321,9 @@ def decompose(
     
     return fig,Reducer
 
-
 def get_length(thinner):
     ratio=32/193
     return ratio * len(thinner)
-
 
 def draw_violin(
     deta,
@@ -448,44 +396,27 @@ def _getEs(
     return (muDiff/sigmaSqrt)[0]
 
 
-def _getEsci(
-    noe,
-    na,
-    nb,
-    d,
-    ci=.99
-):
-    size=na+nb
-    sizes=na*nb
-    
-    se=np.sqrt(
-        (size/sizes) + d**2/(size*2)
-    )
-    dof=size-2
-    critical=t.ppf(
-        q=(1-ci)/2,
-        df=dof
-    )
-    
-    return np.sort(
-        np.array([d-(critical*se),d+(critical*se)],np.float32)
-    )
-
-
 def isVs(x:pd.Series)->bool:
     return len(x.sample(frac=.1).unique())==2
 
-def get_site_effect_evaluation(noe, vol_cols, grouper):
 
+def get_site_effect_evaluation(noe, vol_cols, grouper, covariates=None):
     p_values = []
     f_stats = []
     
     site_dummies = pd.get_dummies(noe[grouper], drop_first=True).astype(float)
-    X = sm.add_constant(site_dummies)
+    
+    if covariates:
+        cov_data = pd.get_dummies(noe[covariates], drop_first=True).astype(float)
+        X = pd.concat([site_dummies, cov_data], axis=1)
+    else:
+        X = site_dummies
+        
+    X = sm.add_constant(X)
     
     for col in vol_cols:
         model = sm.OLS(noe[col], X).fit()
-        p_values.append(model.f_pvalue)
+        p_values.append(model.f_pvalue) 
         f_stats.append(model.fvalue)
     
     avg_p = np.mean(p_values)
@@ -496,8 +427,6 @@ def get_site_effect_evaluation(noe, vol_cols, grouper):
         "sig_count": sig_count,
         "f_stat": np.mean(f_stats)
     }
-
-
 
 def draw_residual_comparison(noe_raw, noe_processed, var, batch_col, covariates):
     fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=False)
@@ -542,6 +471,5 @@ def draw_residual_comparison(noe_raw, noe_processed, var, batch_col, covariates)
         axes[i].set_ylabel("Residual Value" if i==0 else "")
         sns.despine(ax=axes[i])
 
-    plt.suptitle(f"Residual Analysis for {var} (Adjusted for: {', '.join(covariates)})", fontsize=14, y=1.05)
     plt.tight_layout()
     return fig
