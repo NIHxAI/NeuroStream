@@ -269,8 +269,14 @@ with page_volumetry:
 
         st.markdown("##### 📊 Site Effect Evaluation")
         try:
-            stats = util.get_site_effect_evaluation(noe, decomposition_vol_name, grouper)
+            stats = util.get_site_effect_evaluation(noe, decomposition_vol_name, grouper, covariates=selected_covariates)
             
+            if selected_covariates:
+                display_covs = [c.replace('cov_', '').replace('_', ' ').title() if c.startswith('cov_') else c.title() for c in selected_covariates]
+                st.info(f"**Adjusted for:** {', '.join(display_covs)}")
+            else:
+                st.caption("ℹ️ No covariates selected for adjustment (Raw Site Effect).")
+        
             col1, col2, col3 = st.columns(3)
             col1.metric("Avg. Site p-value", f"{stats['avg_p']:.4f}")
             col2.metric("Significant Features", f"{stats['sig_count']} / {len(decomposition_vol_name)}")
@@ -286,7 +292,10 @@ with page_volumetry:
         st.divider()
 
         st.markdown("##### 📈 Batch Effect Validation via Residuals (Pre vs. Post)")
-        
+        display_covs_text = ", ".join([
+            c.replace('cov_', '').replace('_', ' ').title() if c.startswith('cov_') else c.title() 
+            for c in selected_covariates
+            ])
         if "Combat" in transform_method_selected and selected_covariates:
             target_var = st.selectbox(
                 "Select Feature to Examine Residuals",
@@ -303,14 +312,15 @@ with page_volumetry:
                 selected_covariates
             )
             st.pyplot(res_comparison_fig)
-            st.info("**Interpretation:** Post-Combat boxes should be centered around zero.")
+            
+            st.info(f"**Adjusted for:** {display_covs_text}  \n**Interpretation:** Post-Combat boxes should be centered around zero.")
         else:
             st.info("💡 To see residual plots, please select **'Combat'** in the sidebar/control panel and specify covariates.")
-
+        
         st.divider()
 
         main_title = "##### 🎻 Violin Plot"
-        cov_text = f" (covariates: {', '.join(selected_covariates)})" if ("Combat" in transform_method_selected and selected_covariates) else ""
+        cov_text = f" (covariates: {display_covs_text})" if ("Combat" in transform_method_selected and selected_covariates) else ""
         sub_title = f"<sub>{len(decomposition_vol_name)} parameters, {transform_method_selected}{cov_text}</sub>"
         
         st.markdown(f"{main_title}<br>{sub_title}", unsafe_allow_html=True)
@@ -321,6 +331,7 @@ with page_volumetry:
             value_column=decomposition_vol_name
         )
         st.pyplot(violin_fig[0], use_container_width=True, transparent=True)
+
 
 
 if 'upload_done' not in st.session_state:
