@@ -83,16 +83,20 @@ def transform(
     final = deta.copy()
 
     if how == "Log Transform (log1p)":
-        final[deta_contigous_col] = safe_log1p(deta, deta_contigous_col, eps=1e-6, do_zscore=False)
-
+        final[deta_vol_col] = np.log1p(deta[deta_vol_col])
     elif how == "Log Transform + Z-score":
-        final[deta_contigous_col] = safe_log1p(deta, deta_contigous_col, eps=1e-6, do_zscore=True)
-
+        logged = np.log1p(deta[deta_vol_col])
+        final[deta_vol_col] = pd.DataFrame(
+            StandardScaler().fit_transform(logged),
+            columns=deta_vol_col,
+            index=deta.index
+        )
     elif how == "Scale (Z-score)":
-        scaler = StandardScaler()
-        X = deta.loc[:, deta_contigous_col].to_numpy(dtype=float)
-        final[deta_contigous_col] = scaler.fit_transform(X)
-
+        final[deta_vol_col] = pd.DataFrame(
+            StandardScaler().fit_transform(deta[deta_vol_col]),
+            columns=deta_vol_col,
+            index=deta.index
+        )
     elif "Combat" in how:
         if not covariates:
             Xc = None
@@ -126,23 +130,23 @@ def transform(
         vol_no_icv = [c for c in deta_vol_col if c != icv_col]
         final[vol_no_icv] = deta.loc[:, vol_no_icv].div(deta[icv_col], axis=0)
 
+    final.index = deta.index
     return final
 
 @st.cache_data
 def get_noe_image(deta_path=path)->dict:
     return {q.name.replace('.png',''):open(q.path) for q in os.scandir(deta_path) if q.name.endswith('.png')}
 
+
 @st.cache_data
 def trim(deta, deta_vol_col, gizun=.001) -> pd.DataFrame:
-    deta_vol_col=[q for q in deta.columns if q in deta_vol_col]
-    _lim=lambda q:(q.quantile(gizun), q.quantile(1-gizun))
-    lim=deta[deta_vol_col].apply(_lim).to_dict("list")
+    final = deta.copy()
+    deta_vol_col = [q for q in final.columns if q in deta_vol_col]
     
-    for col in lim.keys():
-        _arr=deta.loc[:,col].to_numpy(dtype=np.float32)
-        _arrLower=_arr<lim[col][0]
-        _arrUpper=_arr>lim[col][1]
-        _arr[_arrLower]=np.nan
-        _arr[_arrUpper]=np.nan
-        deta.loc[:,col]=_arr
-    return deta
+    for col in deta_vol_col:
+        lower = final[col].quantile(gizun)
+        upper = final[col].quantile(1 - gizun)
+        
+        final.loc[(final[col] < lower) | (final[col] > upper), col] = np.nan
+    
+    return final.dropna(subset=deta_vol_col)
