@@ -15,6 +15,13 @@ st.set_page_config(
     page_icon=None
 )
 
+def clean_name(x):
+    if isinstance(x, str) and x.startswith('cov_'):
+        return x.replace('cov_', '').replace('_', ' ').title()
+    if isinstance(x, str):
+        return util.sanitise(x)
+    return x
+
 st.markdown(
     '''
         <style>
@@ -98,7 +105,7 @@ if data_loaded:
                     "Select Covariates for ComBat",
                     options=cov_candidates,
                     default=default_covs,
-                    format_func=lambda x: x.replace('cov_', '').replace('_', ' ').title() if x.startswith('cov_') else x.title()
+                    format_func=clean_name
                 )
             
             div_select_switch,div_trim_switch=st.columns(2)
@@ -140,7 +147,7 @@ if data_loaded:
                 lt=st.selectbox(
                     f"Group ({len(noeCatName)})",
                     noeCatName,
-                    format_func=lambda x: x.replace('cov_', '').replace('_', ' ').title() if isinstance(x, str) and x.startswith('cov_') else util.sanitise(x),
+                    format_func=clean_name,
                     key="l"
                 )
             with dropdown_listbox_center:
@@ -171,7 +178,7 @@ if data_loaded:
                 select[0],
                 (
                     select[1],
-                    f"{util.sanitise(select[1])}",
+                    clean_name(select[1]),
                     util.code['selected'][select[0]]
                 )
             )
@@ -213,7 +220,7 @@ with page_description:
                     with boxplotImageDivider[0]:
                         boxplotLeft = util.multiBox(noe, Selected.left, selected, vs=vs)
                         if vs:
-                            st.markdown(f"**Statistical Summary**<br><sub>{boxplotLeft[0][1]}, {boxplotLeft[0][2]}</sub>", unsafe_allow_html=True)
+                            st.markdown(f"**Statistical Summary ({Selected.left[1]})**<br><sub>{boxplotLeft[0][1]}, {boxplotLeft[0][2]}</sub>", unsafe_allow_html=True)
                         st.plotly_chart(boxplotLeft[1], use_container_width=True)
                     
                     if select_switch and len(boxplotImageDivider) > 1:
@@ -224,13 +231,15 @@ with page_description:
 
                     if not vs:
                         intergroupTtestResult = util.intergroupTt(noe, Selected.left, selected)
-                        st.markdown(f"{intergroupTtestResult[0]}", unsafe_allow_html=True)
+                        clean_ttest_title = intergroupTtestResult[0].replace(group_col, Selected.left[1])
+                        st.markdown(f"{clean_ttest_title}", unsafe_allow_html=True)
                         st.dataframe(intergroupTtestResult[1].style.map(util.sign), use_container_width=True)
                     
                     st.divider()
                 try:
                     scatter = util.scatterTrajectory(noe=noe, c=Selected.left, x=Selected.center, y=Selected.right)
-                    st.markdown(scatter[0], unsafe_allow_html=True)
+                    clean_scatter_title = scatter[0].replace(group_col, Selected.left[1])
+                    st.markdown(clean_scatter_title, unsafe_allow_html=True)
                     st.plotly_chart(scatter[1])
                 except Exception as err:
                     st.caption("Scatter plot is not available for current selection.")
@@ -272,7 +281,7 @@ with page_volumetry:
             stats = util.get_site_effect_evaluation(noe, decomposition_vol_name, grouper, covariates=selected_covariates)
             
             if selected_covariates:
-                display_covs = [c.replace('cov_', '').replace('_', ' ').title() if c.startswith('cov_') else c.title() for c in selected_covariates]
+                display_covs = [clean_name(c) for c in selected_covariates]
                 st.info(f"**Adjusted for:** {', '.join(display_covs)}")
             else:
                 st.caption("ℹ️ No covariates selected for adjustment (Raw Site Effect).")
@@ -291,11 +300,9 @@ with page_volumetry:
 
         st.divider()
 
-        st.markdown("##### 📈 Batch Effect Validation via Residuals (Pre vs. Post)")
-        display_covs_text = ", ".join([
-            c.replace('cov_', '').replace('_', ' ').title() if c.startswith('cov_') else c.title() 
-            for c in selected_covariates
-            ])
+        st.markdown("##### 📈 Batch Effect Validation via Residuals (Pre-Combat vs. Post-Combat)")
+        display_covs_text = ", ".join([clean_name(c) for c in selected_covariates])
+
         if "Combat" in transform_method_selected and selected_covariates:
             target_var = st.selectbox(
                 "Select Feature to Examine Residuals",
@@ -333,7 +340,6 @@ with page_volumetry:
         st.pyplot(violin_fig[0], use_container_width=True, transparent=True)
 
 
-
 if 'upload_done' not in st.session_state:
     st.session_state['upload_done'] = False
     
@@ -369,4 +375,3 @@ with foot:
         """**© 2026 <https://www.nih.go.kr>**""",
         unsafe_allow_html=True
     )
-
