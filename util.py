@@ -347,7 +347,7 @@ def draw_violin(
     
     ax.axvline(x=0,alpha=.5,color='#303030',linewidth=.5,linestyle='--')
     
-    ax.yaxis.set_tick_params(labelsize=4,labelrotation=20)
+    ax.yaxis.set_tick_params(labelsize=6,labelrotation=20)
     ax.xaxis.set_tick_params(labelsize=7)
     
     ax.legend(
